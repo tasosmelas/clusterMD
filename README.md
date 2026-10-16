@@ -182,8 +182,8 @@ Future release packaging may additionally include structured documentation, test
 Clone the repository:
 
 ```
-git clone https://github.com/tasosmelas/md-hdbscan-clustering.git
-cd md-hdbscan-clustering
+git clone https://github.com/tasosmelas/clusterMD.git
+cd clusterMD
 ```
 
 Create a virtual environment:
@@ -237,13 +237,13 @@ To make `clusterMD` available from anywhere, add the repository `scripts/` direc
 For Bash/Zsh:
 
 ```
-export PATH="/path/to/md-hdbscan-clustering/scripts:$PATH"
+export PATH="/path/to/clusterMD/scripts:$PATH"
 ```
 
 For fish:
 
 ```
-set -gx PATH /path/to/md-hdbscan-clustering/scripts $PATH
+set -gx PATH /path/to/clusterMD/scripts $PATH
 ```
 
 ---
@@ -1059,4 +1059,4 @@ Democritus University of Thrace
 
 ## Repository
 
-[github.com/tasosmelas/md-hdbscan-clustering](https://github.com/tasosmelas/md-hdbscan-clustering)
+[github.com/tasosmelas/clusterMD](https://github.com/tasosmelas/clusterMD)
