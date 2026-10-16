@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
 echo "=== Initializing Pipeline Environment ==="
 
@@ -29,6 +30,10 @@ python3 -m pip install -r requirements.txt
 echo "-------------------------------------------------------"
 echo "[+] SETUP COMPLETE!"
 echo "[+] To run the tools from anywhere, run this command once,"
+echo "[+] or add it to your ~/.bashrc file:"
+echo ""
+echo "export PATH=\"$SCRIPTS_DIR:\$PATH\""
+echo "-------------------------------------------------------"
 echo "[+] or add it to your ~/.bashrc file:"
 echo ""
 echo "export PATH=\"$SCRIPTS_DIR:\$PATH\""
