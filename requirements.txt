@@ -1,13 +1,5 @@
-# Core Scientific Libraries (Locked below Numpy 2.0 to protect Numba)
-numpy>=1.21.0,<2.0.0
-scikit-learn>=1.1.0
-scipy>=1.7.0
-
-# Topological & Network Math
-networkx>=2.5
-
-# Universal Packages
+numpy
+scipy
 fast-hdbscan
-numba
 matplotlib
 psutil

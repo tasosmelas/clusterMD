@@ -1,26 +1,20 @@
-# Python bytecode / caches
+# Python bytecode and caches
 __pycache__/
 *.py[cod]
+.pytest_cache/
 
-# Python virtual environments
+# Package build artifacts
+build/
+dist/
+*.egg-info/
+
+# Local Python environments
 .venv/
 venv/
-env/
-.env/
-myenv/
 
-# Molecular-dynamics data
-# Large trajectory/topology files should remain local unless explicitly added.
-*.dcd
-*.psf
-*.pdb
-*.xtc
-*.trr
-*.gro
+# Local analysis outputs
+clusterMD_results_*/
 
-# Generated analysis results
-**/carma_results_*/
-**/clusterMD_results_*/
-
-# OS files
+# Platform metadata
+*:Zone.Identifier
 .DS_Store

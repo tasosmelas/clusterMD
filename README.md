@@ -1,1062 +1,366 @@
 # clusterMD
 
-**Automated density-based clustering and structural analysis of multidimensional PCA/dPCA projections derived from molecular-dynamics trajectories using HDBSCAN.**
+**Automated multidimensional clustering and structural characterization of molecular-dynamics trajectories using PCA/dPCA and HDBSCAN.**
 
-`clusterMD` is a command-line workflow for clustering molecular-dynamics projection data, characterizing density-defined conformational clusters, extracting representative structures, and summarizing observed changes between assigned cluster labels along trajectory order.
+`clusterMD` is a command-line research workflow that connects molecular-dynamics (MD) trajectories to density-defined groups of sampled molecular conformations. It clusters **multidimensional** principal-component analysis (PCA) or dihedral PCA (dPCA) coordinates, relates the assignments to the original trajectory frames, and produces structural representatives, cluster-associated structural ensembles, population summaries, descriptive free-energy visualizations, and observed label-change analyses.
 
-The workflow is designed primarily for multidimensional PCA/dPCA projection data produced from molecular-dynamics trajectories, including projection files generated with `carma` or through `grcarma` workflows.
+It supports **carma** and **GROMACS** workflows, using either existing projection files or generating PCA/dPCA projections from supported trajectory inputs.
 
 <p align="center">
-  <img src="assets/clusterMD_graphical_abstract.png" alt="clusterMD graphical abstract showing trajectory data, PCA/dPCA projection, HDBSCAN clustering, representative conformations, a population-derived free-energy landscape, and observed label changes." width="100%">
+  <img src="assets/clusterMD_graphical_abstract.png" alt="clusterMD workflow: molecular-dynamics data, PCA/dPCA projection, HDBSCAN clustering, structural representatives, a free-energy landscape and observed cluster-label changes." width="100%">
 </p>
 
-<p align="center"><em>Graphical overview of the clusterMD workflow. HDBSCAN clustering is performed in the retained multidimensional PCA/dPCA space; the 2D free-energy landscape is shown for visualization. Arrows summarize observed changes between assigned cluster labels and should not be interpreted as kinetic rate estimates.</em></p>
+<p align="center"><em>Graphical overview of clusterMD. Clustering takes place in the selected multidimensional projection space; two-dimensional landscapes are visualizations. Observed changes between assigned labels do not, on their own, establish kinetic transitions.</em></p>
 
 ---
 
 ## Overview
 
-`clusterMD` integrates multidimensional clustering, trajectory-aware frame handling, structural extraction, structural fitting, descriptive free-energy visualization, and chronological label-change analysis into a single workflow.
+Molecular-dynamics (MD) simulations describe molecular motion as a sequence of atomistic configurations. Understanding the conformational organization sampled by a trajectory, however, requires more than inspecting individual structures: it requires identifying recurrent regions of conformational space, relating them to physically observed configurations, and examining how the trajectory moves among them.
 
-The main stages are:
+`clusterMD` provides an integrated computational approach to this problem. It represents sampled conformations using principal-component analysis (**PCA**) or dihedral principal-component analysis (**dPCA**) coordinates and applies **HDBSCAN** to identify density-defined groups in the **retained multidimensional projection space**. Unlike approaches that cluster only the first two components displayed in a figure, clusterMD uses the number of dimensions specified for the analysis. Configurations that are not assigned to a selected cluster remain explicitly **unassigned** rather than being forced into a group.
 
-1. **Projection ingestion**
-   Reads multidimensional PCA/dPCA coordinates and preserves their associated trajectory-frame identifiers.
+The connection to the original MD trajectory is preserved throughout the analysis. Each assigned observation can be traced to its source frame, enabling cluster-associated structures to be extracted and compared. For every cluster, clusterMD selects an *observed* conformation nearest the arithmetic centroid in projection space, supports structural fitting and optional RMSD-based retention, and summarizes the resulting structural ensemble. In parallel, it reports cluster populations, constructs descriptive free-energy visualizations, and examines changes between assigned labels in trajectory order.
 
-2. **Density-based clustering**
-   Applies HDBSCAN in the retained multidimensional projection space to identify density-defined conformational clusters while explicitly retaining unassigned/noise points.
+The software supports both **carma** and **GROMACS** workflows: researchers can analyze existing PCA/dPCA projections or generate them from compatible trajectory and topology inputs. The clustering and subsequent structural analyses can also be used separately through `--cluster-only`, allowing rapid exploration before performing more extensive characterization.
 
-3. **Cluster characterization**
-   Calculates cluster populations, descriptive population-derived free-energy estimates, and multidimensional clustering summaries.
+### Scientific scope
 
-4. **Structural characterization**
-   Selects one observed representative frame per cluster, extracts cluster-member structures from the original trajectory, performs structural fitting and averaging with `carma`, and optionally applies downstream RMSD-based structural filtering.
-
-5. **Chronological label-change analysis**
-   Summarizes observed changes between assigned cluster labels along trajectory order and generates descriptive tables and plots for inspection.
-
-> **Important:** HDBSCAN clusters should not automatically be interpreted as metastable states, and observed changes between assigned cluster labels are not kinetic rate estimates.
-
----
+The results are intended to support **exploratory and reproducible conformational analysis**. HDBSCAN clusters describe density structure in a chosen representation; they do not automatically establish metastable or thermodynamic states. Likewise, observed label changes summarize the temporal ordering of assignments but are not kinetic rate estimates. Population-based free-energy descriptions depend on the sampling and assumptions of the underlying simulation. The scientific interpretation and limitations of these outputs are discussed below.
 
 ## Key features
 
-- Multidimensional PCA/dPCA clustering with HDBSCAN
-- Support for both `eom` and `leaf` HDBSCAN cluster-selection methods
-- Manual or automatic HDBSCAN parameter selection
-- Preservation of original trajectory frame identifiers
-- Explicit retention of HDBSCAN unassigned/noise points
-- Cluster population statistics
-- Population-derived free-energy estimates
-- 2D projection visualizations
-- Chronological observed-label-change summaries
-- Representative observed-frame extraction
-- `carma`-based structural fitting and averaging
-- Cluster structural superpositions
-- Optional RMSD-based downstream structural filtering
-- Structural processing restricted by segment identifier using `--segid`
-- Cluster-only execution mode
-- Post-run observed-label-change inspection
-- Runtime provenance and software-version reporting
-- Deterministic input-file selection with warnings when multiple candidates are present
-
----
-
-## Scientific interpretation
-
-`clusterMD` identifies **density-defined conformational clusters** in PCA/dPCA projection space.
-
-The software does not, by itself, establish that those clusters correspond to thermodynamic states or metastable states.
-
-Likewise, chronological changes between assigned cluster labels are descriptive observations of trajectory ordering. They should not be interpreted directly as:
-
-- kinetic transition rates,
-- Markov transition probabilities,
-- state lifetimes,
-- free-energy barriers,
-- or proof of folding/unfolding pathways.
-
-Population-derived free-energy estimates are descriptive and depend on the assumptions and quality of the underlying molecular-dynamics sampling. Their interpretation is strongest when the sampled trajectory is representative of the relevant equilibrium ensemble.
-
-Clustering is performed in the retained multidimensional PCA/dPCA coordinate space. Two-dimensional figures are used for visualization only and are not necessarily the full space in which HDBSCAN clustering was performed.
-
----
-
-## Structural representative definition
-
-For each cluster, `clusterMD`:
-
-1. calculates the arithmetic centroid of the cluster in the retained PCA/dPCA coordinate space,
-2. identifies the observed cluster frame nearest that centroid,
-3. extracts that observed trajectory frame as the representative structure.
-
-The reported representative is therefore:
-
-**the observed frame nearest the arithmetic centroid in the retained PCA/dPCA coordinate space**
-
-and should not be described as a mathematical medoid.
-
----
-
-## External dependency: carma
-
-Structural processing in `clusterMD` relies on **carma**, a stand-alone molecular-dynamics analysis program designed primarily for DCD/PSF trajectories.
-
-`carma` provides functionality including:
-
-- Cartesian PCA,
-- dihedral-angle PCA,
-- trajectory fitting,
-- structural averaging,
-- RMSD analysis,
-- atomic fluctuation analysis,
-- trajectory superposition,
-- and other molecular-dynamics analysis operations.
-
-`clusterMD` uses selected `carma` functionality for structural characterization of HDBSCAN-defined conformational clusters.
-
-`grcarma` is the graphical user interface to `carma` and can be used to automate and facilitate upstream molecular-dynamics analyses, including PCA/dPCA workflows.
-
-For structural analysis, the `carma` executable must be installed separately and available in the system `PATH`.
-
-The clusterMD validation environment used:
-
-```text
-carma 2.3
-````
-
-`carma` and `grcarma` are external software and are not bundled with `clusterMD`.
-
----
-
-## Python requirements
-
-The current validated environment uses:
-
-```
-Python          3.12.3
-NumPy           1.26.4
-SciPy           1.17.1
-scikit-learn    1.9.1
-fast-hdbscan    0.3.2
-Numba           0.68.0
-NetworkX        3.7
-Matplotlib      3.11.2
-psutil          7.2.2
-```
-
-The exact validated Python environment is recorded in:
-
-```
-requirements-lock.txt
-```
-
-The broader installation requirements are listed in:
-
-```
-requirements.txt
-```
-
-The exact lock file is intended for reproducibility of the validated release environment.
-
----
-
-## Repository structure
-
-```
-.
-├── README.md
-├── requirements.txt
-├── requirements-lock.txt
-├── setup_env.sh
-└── scripts/
-    └── clusterMD
-```
-
-Future release packaging may additionally include structured documentation, test fixtures, citation metadata, examples, and release metadata.
-
----
+- Multidimensional HDBSCAN clustering with `eom` or `leaf` cluster selection.
+- Existing-projection ingestion and native PCA/dPCA generation paths for carma and GROMACS.
+- Manual clustering parameters or the optional `--auto` heuristic.
+- Original frame identity and backend-aware mapping to trajectories.
+- Population accounting including **Unassigned** observations (machine-readable label `-1`).
+- Cluster populations, descriptive free-energy surfaces, two-dimensional projection figures and cluster connectivity views.
+- Representative structures selected from **actual sampled frames**, not artificial centroid structures.
+- Cluster-associated trajectories, structural alignment and optional RMSD-based filtering.
+- Post-run examination of observed label changes and their chronology.
+- A fast `--cluster-only` mode for preliminary clustering and parameter exploration.
+- Human-readable analysis reports, execution logs, projection diagnostics when applicable and machine-readable provenance.
 
 ## Installation
 
-Clone the repository:
+### Requirements
 
-```
+- **Python 3.12** is the version used for the fresh-install release checks. The package currently declares Python **3.10 or newer**, but not every Python/platform combination has been independently validated.
+- A standard Python virtual environment and `pip`.
+- **carma** installed separately when using carma-based projection generation or structural processing.
+- **GROMACS** and its relevant executable(s) installed separately where required by GROMACS-native operations. The Python package does not install carma or GROMACS.
+- The associated trajectory and topology/run-input files appropriate to the selected backend.
+
+### Install as a Python package
+
+Clone the repository and create an isolated environment:
+
+```bash
 git clone https://github.com/tasosmelas/clusterMD.git
 cd clusterMD
+python3.12 -m venv .venv
 ```
 
-Create a virtual environment:
+Activate it in **Bash/Zsh**:
 
-```
-python3 -m venv .venv
-```
-
-Activate it.
-
-For Bash/Zsh:
-
-```
+```bash
 source .venv/bin/activate
 ```
 
-For fish:
+Or in **Fish**:
 
-```
+```fish
 source .venv/bin/activate.fish
 ```
 
-Install the supported Python dependencies:
+Then install clusterMD from the repository root:
 
-```
-python -m pip install -r requirements.txt
-```
-
-For exact reproduction of the validated Python environment:
-
-```
-python -m pip install -r requirements-lock.txt
-```
-
-Alternatively, the provided setup script can be used from the repository root:
-
-```
-chmod +x setup_env.sh
-./setup_env.sh
-```
-
-The setup script:
-
-- checks that the repository structure is present,
-- makes scripts in `scripts/` executable,
-- installs Python dependencies from `requirements.txt`,
-- prints the path command required to make `clusterMD` directly executable from the shell.
-
-To make `clusterMD` available from anywhere, add the repository `scripts/` directory to your `PATH`.
-
-For Bash/Zsh:
-
-```
-export PATH="/path/to/clusterMD/scripts:$PATH"
-```
-
-For fish:
-
-```
-set -gx PATH /path/to/clusterMD/scripts $PATH
-```
-
----
-
-## Input data
-
-The primary input is a whitespace-delimited PCA/dPCA projection file.
-
-The first column contains trajectory-frame identifiers.
-
-The remaining columns contain projected coordinates.
-
-Typical filenames include:
-
-```
-carma.PCA.fluctuations.dat
-carma.dPCA.fluctuations.dat
-```
-
-A simplified example:
-
-```
-1       -0.8342    1.4410    0.2184
-4       -0.7915    1.3922    0.1947
-7       -0.7551    1.3504    0.1821
-10      -0.7327    1.3118    0.1654
-```
-
-The frame identifiers are preserved through clustering and are used to map cluster assignments back to the molecular-dynamics trajectory.
-
-When structural analysis is requested, the corresponding trajectory and topology files must also be available.
-
-Typical structural inputs are:
-
-```
-*.dcd
-*.psf
-```
-
----
-
-## Projection stride and frame identifiers
-
-`clusterMD` preserves the frame identifiers present in the projection file.
-
-If the projection itself was generated with a stride upstream, for example with `carma -step 3`, then the projection file may contain frame identifiers such as:
-
-```
-1
-4
-7
-10
-...
-```
-
-These identifiers correspond to the original trajectory-frame indexing represented in the projection file.
-
-The `--step` option in `clusterMD` applies an additional stride during projection-file ingestion.
-
-This distinction is important:
-
-- upstream `carma` stride changes which frames are written to the projection file,
-- `clusterMD --step` subsamples the rows already present in that projection file.
-
----
-
-## Basic usage
-
-Run the full pipeline from a directory containing, or adjacent to, the projection file:
-
-```
-clusterMD
-```
-
-Example:
-
-```
-clusterMD --auto --method leaf --dim 5 --rmsd 2.0 --segid A
-```
-
-Other examples:
-
-```
-clusterMD --auto
-```
-
-```
-clusterMD --method leaf
-```
-
-```
-clusterMD --dim 5
-```
-
-```
-clusterMD --step 5
-```
-
-```
-clusterMD --rmsd 2.0
-```
-
-```
-clusterMD --segid A
-```
-
-```
-clusterMD --cluster-only
-```
-
-For the complete command-line interface:
-
-```
+```bash
+python -m pip install .
+python -m pip check
 clusterMD --help
 ```
 
----
+The package installs the `clusterMD` command into the active virtual environment. Activate the environment in future shell sessions before running an analysis.
 
-## Command-line options
+### Dependency compatibility
 
-### `--size`
+An ordinary `pip install .` resolves compatible dependencies at installation time. Tested Python 3.12 workflows completed with **NumPy 2.5.4**, **SciPy 1.18.1**, **fast-hdbscan 0.3.2**, **Numba 0.68.0** and **scikit-learn 1.9.1**. This confirms compatibility for the workflows exercised, not for every Python environment or scientific use case.
 
-```
---size INT
-```
+## Input data and frame identity
 
-Sets HDBSCAN `min_cluster_size`.
+### Supported workflow inputs
 
-Default:
+| Backend | Projection | Trajectory | Topology / run input |
+| --- | --- | --- | --- |
+| carma | Existing PCA/dPCA `*.dat` or newly generated projection | DCD | PSF |
+| GROMACS | Existing compatible XVG or newly generated projection | XTC / TRR | TPR / GRO |
 
-```
-500
-```
+Provide files explicitly with `--file`, `--traj` and `--topo` when possible. clusterMD can search for compatible files automatically, but you should **read its resolved-input summary** and confirm that the selected trajectory, topology and projection correspond to the same system.
 
----
+**carma projection example:** A whitespace-delimited fluctuations file contains a source-frame identifier followed by projected coordinates:
 
-### `--samples`
-
-```
---samples INT
-```
-
-Sets HDBSCAN `min_samples`.
-
-Default:
-
-```
-50
+```text
+1    -0.8342   1.4410   0.2184
+4    -0.7915   1.3922   0.1947
+7    -0.7551   1.3504   0.1821
+10   -0.7327   1.3118   0.1654
 ```
 
----
+The first column is **not a principal component**; it identifies the original frame. clusterMD retains and validates this mapping so assignments can be traced back to molecular structures. GROMACS input formats and frame conventions are handled according to their backend-specific mapping logic; do not assume a carma frame ordinal convention applies unchanged to an XVG projection.
 
-### `--auto`
+### Two different strides
 
-```
---auto
-```
+- **`--pstep`** applies when **generating** a projection from trajectory frames.
+- **`--step`** applies an additional stride when **reading projected rows for clustering**.
 
-Automatically sets `min_cluster_size` and `min_samples` using the built-in frame-count heuristic.
+For example, a projection produced upstream from original frames `1, 4, 7, 10, ...` is already subsampled. Applying `--step 2` to that projection selects every second *projection row*, not every second frame of the original unsampled trajectory.
 
----
+Generation options `--frame-start` and `--frame-stop` refer to **one-based, inclusive original-frame boundaries**. Whenever frame subsampling, selection or conversion occurs, verify the generated mapping recorded in the results.
 
-### `--method`
+### Selection and periodic boundaries
 
-```
---method {eom,leaf}
-```
+The *projection selection* defines the atoms, segments or torsions used to create PCA/dPCA coordinates. The *structural selection* defines the atoms included in representative extraction and fitting. These choices are related but not necessarily identical.
 
-Selects the HDBSCAN cluster-selection method.
+A GROMACS **TPR** carries topology information useful for reconstruction under periodic boundary conditions. A **GRO** does not provide the bond topology required for automatic whole-molecule reconstruction; when using GRO, ensure that the input trajectory has been prepared appropriately. Native tools and suitable data preparation remain the user's responsibility.
 
-Supported values:
+## Quick start
 
-```
-eom
-leaf
-```
+The examples below assume the Python package has been installed and the virtual environment is active. Replace all `/path/to/...` placeholders with your own files.
 
-Default:
+### 1. Cluster an existing carma dPCA projection
 
-```
-eom
+```bash
+clusterMD --file /path/to/carma.dPCA.fluctuations.dat \
+  --cluster-only --dim 5 --step 1 \
+  --size 30 --samples 10 --method leaf
 ```
 
----
+This performs ingestion, HDBSCAN clustering and assignment export without generating structural ensembles or full characterization figures. It is useful for checking projection content and exploring clustering parameters.
 
-### `--dim`
+### 2. Analyze an existing carma dPCA projection with structures
 
-```
---dim INT
-```
-
-Selects the number of projected dimensions used in clustering.
-
-```
-0
-```
-
-uses all available projected dimensions.
-
----
-
-### `--step`
-
-```
---step INT
+```bash
+clusterMD --file /path/to/carma.dPCA.fluctuations.dat \
+  --traj /path/to/trajectory.dcd \
+  --topo /path/to/topology.psf \
+  --dim 5 --step 1 \
+  --size 30 --samples 10 --method leaf \
+  --rmsd 0 --temp 298
 ```
 
-Applies a row stride during projection-file ingestion.
+This runs the clusterMD workflow using an existing carma-generated dPCA projection and carma for structural characterization. It includes population and observed-label-change analyses, figures and structural extraction when the native executable and inputs are compatible. `--rmsd 0` leaves RMSD filtering disabled. For optional structural filtering, use an appropriate positive threshold (in Å) and inspect retention counts.
 
-Default:
+### 3. Generate and analyze a carma dPCA projection
 
-```
-1
-```
-
----
-
-### `--rmsd`
-
-```
---rmsd FLOAT
+```bash
+clusterMD --traj /path/to/trajectory.dcd \
+  --topo /path/to/topology.psf \
+  --proj dpca --pdim 5 --pstep 1 \
+  --dim 5 --size 500 --samples 50 --method eom
 ```
 
-Applies an optional RMSD threshold in Ångström during downstream structural filtering.
+For segment-specific generation, use the relevant `--segid`; for residue-limited projection, investigate `--residues` and the backend's torsion-boundary behavior. carma-generated dPCA uses the supported internal torsion scope.
 
-Default:
+### 4. Generate and analyze a GROMACS PCA projection
 
-```
-0
-```
-
-which disables RMSD filtering.
-
-RMSD filtering does not alter the original HDBSCAN cluster assignments.
-
----
-
-### `--temp`
-
-```
---temp FLOAT
+```bash
+clusterMD --traj /path/to/trajectory.xtc \
+  --topo /path/to/topology.tpr \
+  --proj pca --atom ca --pdim 5 --pstep 1 \
+  --dim 5 --step 1 \
+  --size 10 --samples 3 --method eom \
+  --rmsd 8 --temp 298
 ```
 
-Temperature in Kelvin used for population-derived free-energy estimates.
+A validated small-system run also used XTC/GRO inputs, but GRO requires attention to whole-molecule/PBC preparation. Use `--index` where a GROMACS atom-index file is needed for a named projection group.
 
-Default:
+### 5. Analyze an existing GROMACS XVG projection
 
-```
-298.0
-```
-
----
-
-### `--segid`
-
-```
---segid STRING
+```bash
+clusterMD --file /path/to/projection.xvg \
+  --traj /path/to/trajectory.xtc \
+  --topo /path/to/topology.tpr \
+  --selection Backbone --dim 5 \
+  --size 10 --samples 3 --method eom
 ```
 
-Restricts structural extraction and fitting to the specified segment identifier.
+Ensure that the projection rows and source trajectory frames correspond correctly. `--selection` controls downstream structural selection, not an already-existing projection's coordinates.
 
-Example:
+### 6. Inspect observed label changes
 
-```
-clusterMD --segid A
-```
+From an appropriate `clusterMD_results_*` directory:
 
-The option affects structural processing only. It does not alter the HDBSCAN clustering performed on the projection coordinates.
-
----
-
-### `--cluster-only`
-
-```
---cluster-only
-```
-
-Runs projection ingestion and HDBSCAN clustering, exports the assignments, and exits before downstream visualization and structural analysis.
-
-This is useful for clustering-focused workflows and validation.
-
----
-
-### `--top`
-
-```
---top INT
-```
-
-Controls how many of the most frequent observed label changes are displayed in diagnostic tables and plots.
-
-Default:
-
-```
-15
-```
-
-A value of:
-
-```
-0
-```
-
-disables displayed edges.
-
----
-
-### `--transitions`
-
-```
---transitions
-```
-
-These are aliases.
-
-With no cluster IDs, the option displays the most frequent observed changes.
-
-Example:
-
-```
+```bash
 clusterMD --transitions
+clusterMD --transitions 0 5 --events 10
 ```
 
-A specific pair can be inspected by providing two cluster IDs:
+The first command summarizes observed changes; the second inspects the chronology of a specific assigned-label pair without rerunning clustering.
 
-```
-clusterMD --transitions 0 5
-```
+## Command-line reference
 
----
+Use `clusterMD --help` for the authoritative option list in your installed version. The principal options are grouped below.
 
-### `--events`
+### Clustering and characterization
 
-```
---events INT
-```
+| Option | Default | Purpose |
+| --- | --- | --- |
+| `--size INT` | `500` | HDBSCAN `min_cluster_size` |
+| `--samples INT` | `50` | HDBSCAN `min_samples` |
+| `--method {eom,leaf}` | `eom` | HDBSCAN cluster-selection method |
+| `--auto` | Off | Derive both HDBSCAN parameters from analyzed row count |
+| `--dim INT` | `0` | Number of retained projected dimensions; `0` uses all available |
+| `--step INT` | `1` | Stride across projection rows during ingestion |
+| `--cluster-only` | Off | Export clustering assignments without downstream characterization |
+| `--temp FLOAT` | `298.0` K | Temperature for population-derived relative free-energy estimates |
+| `--rmsd FLOAT` | `0` Å | Optional downstream structural filter; `0` disables it |
+| `--top INT` | `15` | Number of prominent observed label changes displayed; `0` hides displayed edges |
+| `--transitions [ID ID]` | — | Post-run label-change inspection; omit IDs for overview |
+| `--events INT` | `3` | Maximum chronological events printed in diagnostic mode |
 
-Maximum number of chronological label-change events printed during diagnostic inspection.
+**Automatic parameter heuristic.** With `--auto`, the present implementation derives parameters from the number `N` of analyzed projection rows:
 
-Default:
-
-```
-3
-```
-
----
-
-## Automatic HDBSCAN parameter heuristic
-
-When `--auto` is enabled, `clusterMD` derives HDBSCAN parameters from the number of analyzed projection rows.
-
-The current heuristic is:
-
-```
-min_cluster_size = max(100, int(500 * sqrt(N / 1,000,000)))
+```text
+min_cluster_size = max(100, int(500 * sqrt(N / 1_000_000)))
 min_samples      = max(10, int(min_cluster_size / 10))
 ```
 
-where `N` is the number of analyzed projection rows.
+These are pragmatic defaults, **not an optimized or universally valid scientific parameter-selection method**. Evaluate stability with respect to sample size, dimensionality and HDBSCAN settings when interpreting cluster structure.
 
-This heuristic is intended as a practical default.
+### Files, selection and backends
 
-It should not be interpreted as a universally optimal parameter-selection rule.
+| Option | Purpose |
+| --- | --- |
+| `--file PATH` | Use an existing carma DAT or compatible GROMACS XVG projection |
+| `--traj PATH` | Specify a DCD, XTC or TRR trajectory |
+| `--topo PATH` | Specify a PSF, TPR or GRO topology/run-input file |
+| `--segid NAME` | carma projection segment or GROMACS index group; also defaults carma structural selection unless overridden |
+| `--selection NAME` | Structural atom/segment selection, e.g. `Backbone` for supported GROMACS workflows |
 
-Parameter sensitivity should be examined when scientific conclusions depend strongly on cluster boundaries or cluster counts.
+The backend is inferred from the resolved input combination; there is no general `--backend` switch in the public CLI.
 
----
+### Projection generation
 
-## HDBSCAN clustering output
+| Option | Default / use |
+| --- | --- |
+| `--proj {pca,dpca}` | Generate a fresh projection; absent a suitable existing projection, the workflow may default to dPCA |
+| `--pdim INT` | `5` generated components |
+| `--pstep INT` | `1` trajectory-frame stride during generation |
+| `--frame-start INT` | First original-frame index, one-based and inclusive |
+| `--frame-stop INT` | Last original-frame index, one-based and inclusive |
+| `--atom {ca,backbone,heavy}` | Cartesian PCA atom selection; defaults to CA |
+| `--residues SPEC` | Residue subset such as `5-20,28`; requires projection generation |
+| `--torsion-scope {internal,owned}` | dPCA boundary policy; carma supports `internal` only |
+| `--index PATH` | Optional GROMACS index file for named index groups |
+| `--torsions PATH` | Optional GROMACS torsion index with atom quadruplets |
+| `--carma-executable PATH` | carma executable for *projection generation* when `--proj` is specified |
 
-The main cluster-assignment file follows the general naming pattern:
+Some combinations are backend-specific. In particular, Cartesian PCA atom selection does not apply to dPCA, and carma versus GROMACS differ in their residue/torsion handling. Inspect the reported analysis inputs and generated projection metadata rather than assuming interchangeable selections.
 
-```
-hdbscan.<D>-D.clusters.dat
-```
+## How the analysis works
 
-where `<D>` is the number of retained dimensions.
+### Multidimensional HDBSCAN and cluster labeling
 
-The file contains:
+HDBSCAN runs on the selected retained component coordinates, not on the two-dimensional plot alone. The algorithm labels observations that it cannot associate with a selected cluster as `-1`. clusterMD retains this label in numerical outputs and calls such observations **Unassigned** in human-readable reporting.
 
-1. original trajectory-frame identifier,
-2. cluster label,
-3. retained PCA/dPCA coordinates.
+For readability, assigned cluster labels are reordered by **descending population**. This relabeling does not change memberships. Cluster populations are counted relative to all analyzed frames, including unassigned observations:
 
-Unassigned/noise points retain the HDBSCAN label:
-
-```
--1
-```
-
-`clusterMD` preserves this label rather than forcibly assigning noise points to clusters.
-
----
-
-## Cluster populations
-
-For each cluster, `clusterMD` calculates the number of assigned projection frames.
-
-The total population satisfies:
-
-```
-assigned frames + unassigned/noise frames = analyzed frames
+```text
+assigned frames + unassigned frames = analyzed frames
 ```
 
-Cluster relabeling does not alter cluster membership.
+### Representative conformations
 
----
+For every assigned cluster, clusterMD calculates the arithmetic centroid in the *retained PCA/dPCA space* and selects the **actual observed frame nearest that centroid**. It then extracts the corresponding molecular configuration from the trajectory.
 
-## Free-energy estimates
+**This is a centroid-nearest observed representative, not a mathematical medoid.** The centroid itself need not correspond to any sampled structure; clusterMD deliberately chooses an observed frame.
 
-Population-derived free-energy estimates are calculated from observed populations at the selected temperature.
+### Structural fitting and RMSD filtering
 
-These are descriptive estimates derived from sampling frequency.
+Structural processing takes place **after** clustering and cannot redefine the original HDBSCAN assignments. The available output depends on the backend and the supplied structural inputs.
 
-Their interpretation depends on the sampling characteristics of the underlying molecular-dynamics trajectory.
+For **carma**, the present workflow extracts the cluster-member DCD, fits the ensemble to the selected observed representative, and produces a superposition when supported by the native run. RMSD values for optional filtering are obtained from carma's **representative-relative fit RMSD**, not RMSD to an averaged structure. The complete fitted cluster trajectory is preserved; if a positive RMSD threshold is applied successfully, an additional retained/core subset is produced. The selection does not change the cluster population or representative definition.
 
-They should not be treated as exact thermodynamic free energies when the trajectory does not adequately represent equilibrium sampling.
+For **GROMACS**, the workflow extracts and fits structures using its native backend, produces per-cluster representatives and structural outputs, and reports the number retained under the selected RMSD criterion. Specific filenames and fitted-trajectory formats may differ from carma outputs.
 
-Free-energy visualizations are intended to support interpretation of sampled conformational density.
+A strict RMSD threshold can leave very few retained structures; retention is an additional structural characteristic, **not** evidence that HDBSCAN misclassified the other frames. If a native structural operation fails, examine the execution log and report rather than assuming all outputs were produced.
 
----
+### Cluster populations and relative free energy
 
-## Two-dimensional visualizations
+Cluster population counts represent how many analyzed projection observations received each cluster label. Population-derived relative free energies use the selected temperature and the relative sampling frequencies of assigned clusters. Two-dimensional free-energy landscapes depict sampled projected density and can be useful for visual interpretation.
 
-`clusterMD` generates two-dimensional projection figures for inspection and presentation.
+Neither estimate guarantees equilibrated sampling. Free-energy estimates and visual landscape features depend on the trajectories and the chosen representation; a 2D projection may hide meaningful higher-dimensional relationships.
 
-These figures do not imply that clustering was performed only in two dimensions.
+### Observed label changes
 
-HDBSCAN clustering occurs in the retained multidimensional projection space selected with:
+The chronological analysis summarizes changes between successive **assigned labels** after omitting unassigned observations from the counted label sequence. Consequently, two different assigned labels separated by one or more unassigned frames can contribute to an observed pair change. Edge counts are descriptive and represented as **undirected cluster pairs** in the reported summaries.
 
-```
---dim
-```
+These counts do not account for physical transition times or provide Markov-model kinetics. Use post-run `--transitions` diagnostics to inspect individual chronological examples and any intervening unassigned frames.
 
-or in all available dimensions when:
+## Outputs and reports
 
-```
---dim 0
-```
+A run creates a timestamped directory similar to:
 
-is used.
-
----
-
-## Structural processing
-
-For each density-defined cluster, `clusterMD` performs structural processing using the original trajectory and topology.
-
-The workflow includes:
-
-1. identification of cluster-member trajectory frames,
-2. selection of the representative frame,
-3. extraction of cluster-member frames,
-4. structural fitting using `carma`,
-5. average-structure calculation,
-6. superposition generation,
-7. RMSD evaluation,
-8. optional RMSD-based structural filtering,
-9. recalculation of the fitted structural ensemble after filtering.
-
-Structural processing is downstream of clustering.
-
-The original HDBSCAN labels and cluster populations are not altered by the structural filtering stage.
-
----
-
-## RMSD-based structural filtering
-
-When:
-
-```
---rmsd > 0
-```
-
-is used, `clusterMD` applies downstream structural filtering.
-
-The general process is:
-
-1. structurally fit the cluster ensemble,
-2. calculate RMSD relative to the fitted ensemble average,
-3. retain structures satisfying the selected RMSD criterion,
-4. rebuild the filtered structural ensemble from the original retained trajectory frames,
-5. recalculate the final fitted ensemble and average structure.
-
-Because the structural average is recalculated after filtering, the final reported maximum RMSD to the final average can differ from the filtering threshold used during the preceding filtering step.
-
-This does not imply that HDBSCAN assignments were changed.
-
----
-
-## Structural reporting
-
-For structurally processed clusters, reporting includes values such as:
-
-```
-HDBSCAN Frames
-Structural Frames
-Retained %
-Representative Frame
-Max RMSD to avg
-```
-
-These values separate clustering membership from downstream structural retention.
-
----
-
-## Observed label changes
-
-`clusterMD` examines the chronological sequence of assigned cluster labels.
-
-It can report observed changes between assigned labels and their frequencies.
-
-These outputs are intended as descriptive summaries of trajectory ordering.
-
-They should not be interpreted as direct estimates of:
-
-- transition rates,
-- kinetic constants,
-- Markov-model probabilities,
-- metastable-state lifetimes,
-- or mechanistic pathway probabilities.
-
-Frames labeled:
-
-```
--1
-```
-
-remain explicitly unassigned/noise and are handled according to the implemented chronological change-counting semantics.
-
----
-
-## Post-run diagnostic mode
-
-`clusterMD` can inspect an existing cluster-assignment file from inside a previous results directory.
-
-For example:
-
-```
-clusterMD --transitions
-```
-
-can be used inside a `clusterMD_results_*` directory to inspect observed label changes without rerunning the full clustering pipeline.
-
-A specific cluster pair can be examined with:
-
-```
-clusterMD --transitions 2 7
-```
-
----
-
-## Output directory
-
-Each full run creates a timestamped directory using the pattern:
-
-```
+```text
 clusterMD_results_DD.MM.YYYY_HH.MM.SS.mmm/
 ```
 
-Millisecond timestamps reduce the possibility of collisions between rapidly repeated runs.
-
----
-
-## Typical outputs
-
-Depending on the selected options and available structural inputs, outputs may include:
-
-- clustered PCA/dPCA coordinates
-- HDBSCAN assignment tables
-- cluster population summaries
-- cluster projection figures
-- population-derived free-energy landscapes
-- observed-label-change summaries
-- observed-label-change plots
-- representative PDB structures
-- cluster-member structural trajectories
-- structurally fitted trajectories
-- structural superpositions
-- average structures
-- RMSD reports
-- execution logs
-- provenance reports
-- software-version information
-
-Not every output is produced in every execution mode.
-
----
-
-## Provenance reporting
-
-`clusterMD` records runtime provenance information including software versions where available.
-
-The report includes information such as:
-
-```
-clusterMD version
-Python version
-fast_hdbscan version
-NumPy version
-SciPy version
-carma version
-```
-
-The exact command invocation is also preserved in the execution record.
-
----
-
-## File discovery behavior
-
-`clusterMD` attempts to locate suitable PCA/dPCA projection files and structural files automatically.
-
-When multiple candidate files are found, the program:
-
-- emits a warning,
-- selects according to its deterministic file-selection logic,
-- records the selected input in the execution log.
-
-Users should verify that the selected files correspond to the intended analysis system.
-
----
-
-## Validation
-
-The current software version has undergone validation using synthetic and real molecular-dynamics datasets.
-
-The validation program has included:
-
-- frame-ID preservation
-- projection stride accounting
-- cluster population accounting
-- deterministic relabeling checks
-- preservation of the `-1` unassigned/noise label
-- observed-label-change counting checks
-- representative-frame verification
-- structural extraction verification
-- output/report consistency checks
-- end-to-end PCA/dPCA workflow testing
-- controlled synthetic clustering tests
-- HDBSCAN parameter-sensitivity analysis
-- retained-dimensionality testing
-- stride-sensitivity testing
-- structural representative comparisons
-- RMSD-filtering validation
-- tests confirming that structural filtering does not alter HDBSCAN assignments
-- malformed-input handling
-- missing-input handling
-- NaN/Inf validation
-- one-dimensional-input handling
-- all-noise and single-cluster edge cases
-- invalid-parameter handling
-- multiple-input-file ambiguity handling
-- performance and scaling measurements
-- deterministic same-environment reruns
-- real-system regression testing
-
----
-
-## Validation environment
-
-The current validated Python environment is:
-
-```
-Python          3.12.3
-cloudpickle     3.1.2
-contourpy       1.3.3
-cycler          0.12.1
-fast_hdbscan    0.3.2
-fonttools       4.66.1
-joblib          1.6.0
-kiwisolver      1.5.1
-llvmlite        0.50.0
-matplotlib      3.11.2
-narwhals        2.26.0
-networkx        3.7
-numba           0.68.0
-numpy           1.26.4
-packaging       26.3
-pillow          12.3.0
-psutil          7.2.2
-pyparsing       3.3.3
-python-dateutil 2.9.0.post0
-scikit-learn    1.9.1
-scipy           1.17.1
-six             1.17.0
-threadpoolctl   3.7.0
-```
-
-The exact environment is stored in:
-
-```
-requirements-lock.txt
-```
-
-The validation environment also used:
-
-```
-carma 2.3
-```
-
----
-
-## Current validated version
-
-```
-clusterMD 1.1.0
-```
-
-This version identifier is recorded in the software provenance report.
-
----
-
-## Reproducibility
-
-For maximum reproducibility:
-
-1. use the same `clusterMD` version,
-2. reproduce the Python environment using `requirements-lock.txt`,
-3. use the same `carma` version where structural processing is required,
-4. use identical PCA/dPCA input data,
-5. use the same trajectory and topology files,
-6. preserve the same clustering parameters,
-7. preserve the same dimensionality and stride settings,
-8. preserve the same structural-processing options.
-
-Example:
-
-```
-python -m pip install -r requirements-lock.txt
-```
-
-followed by the same `clusterMD` invocation used in the original analysis.
-
----
-
-## Scientific scope
-
-`clusterMD` is intended to support reproducible exploration of conformational organization in multidimensional molecular-dynamics projection spaces.
-
-Appropriate uses include:
-
-- density-defined clustering of PCA/dPCA projections,
-- descriptive comparison of cluster populations,
-- extraction of representative observed structures,
-- inspection of structurally fitted cluster ensembles,
-- descriptive free-energy visualization,
-- chronological inspection of changes between assigned cluster labels,
-- parameter-sensitivity and structural-validation workflows.
-
-The software does not replace dedicated kinetic modeling, Markov state modeling, free-energy convergence analysis, or independent structural validation where those are required by the scientific question.
-
----
-
-## Known interpretation boundaries
-
-Users should keep the following distinctions explicit:
-
-### Cluster does not automatically mean metastable state
-
-HDBSCAN detects density structure in the selected projection space.
-
-Additional evidence is required before assigning a kinetic or thermodynamic state interpretation.
-
-### Observed label change does not mean transition rate
-
-A chronological change from one assigned cluster label to another is an observed label change.
-
-It is not, by itself, a kinetic-rate measurement.
-
-### Representative does not mean medoid
-
-The representative structure is selected as the observed frame nearest the arithmetic centroid in retained PCA/dPCA space.
-
-### Structural filtering does not redefine clusters
-
-RMSD filtering affects downstream structural ensembles only.
-
-It does not alter the original HDBSCAN cluster labels or populations.
-
-### 2D visualization does not define the clustering space
-
-Displayed 2D figures are visual projections.
-
-Clustering is performed in the selected multidimensional space.
-
----
-
-## Development status
-
-`clusterMD` is under active research-software development.
-
-The current development focus includes:
-
-- release packaging,
-- dependency and environment reproducibility,
-- documentation,
-- structural-output consistency,
-- reporting improvements,
-- and preparation of the accompanying Application Note.
-
-The validated clustering and structural-analysis core is being preserved while release-oriented improvements are added around it.
-
----
+Depending on mode, backend and input availability, relevant outputs include:
+
+| File or output | Meaning |
+| --- | --- |
+| `hdbscan.<D>-D.clusters.dat` | Original frame identifiers, cluster labels and retained projection coordinates |
+| `clusterMD_analysis_report.txt` | Readable summary of inputs, clustering, populations, scope, diagnostics, timing and status |
+| `clustering_execution.log` | Detailed execution and backend messages |
+| `run_record.json` | Structured configuration and provenance record |
+| `observed_label_changes_report.txt` | Descriptive assigned-label change counts, for full analyses |
+| Static figures | Projection views, population-derived free-energy visualization and connectivity / PCoA views, where generated |
+| `projection/` | Generated coordinates and related projection metadata, where requested |
+| `cluster_XXXX_representative.pdb` | Observed-frame representative structure, where structural extraction succeeds |
+| `cluster_XXXX.dcd` | Full fitted carma cluster-member ensemble, when produced |
+| `cluster_XXXX_core.dcd` | Optional carma RMSD-retained subset, when produced |
+| `cluster_XXXX_superposition.pdb` | carma superposition, when generated |
+| Backend-specific structural directories/files | GROMACS structural outputs and associated retention information |
+
+Not every file appears in every run. In particular, `--cluster-only` intentionally omits full characterization, figures and structural extraction. The analysis report explicitly labels stages that were **not performed**. Numeric diagnostic labels such as `PASSED` or `NOT_ASSESSED` describe a specific diagnostic's scope; they are not claims of general scientific validation.
+
+### Reading the analysis report
+
+Review these fields together:
+
+1. **Inputs and mapping:** resolved projection, trajectory/topology, dimensions, stride and generated-projection settings.
+2. **Clustering:** cluster count, parameter selection, assigned/unassigned counts and populations.
+3. **Characterization:** figures and observed-label-change outputs actually completed.
+4. **Structures:** successful extractions, structural selections and retained counts; confirm that `Completed` applies to the run being examined.
+5. **Numerical diagnostic and provenance:** what was tested, what was not assessed and the runtime package versions.
+
+A successful process exit indicates completed execution under the requested mode; it does not independently demonstrate that the chosen parameters or resulting clusters are scientifically appropriate.
+
+## Scientific interpretation and limitations
+
+The following distinctions are essential when describing results from clusterMD:
+
+| Computation | Appropriate interpretation | Not established by itself |
+| --- | --- | --- |
+| HDBSCAN assignment | Density-defined cluster in selected PCA/dPCA coordinates | Metastable or thermodynamic state |
+| Observed label change | Change between assigned labels along sampled order | Kinetic rate, Markov transition probability or reaction mechanism |
+| Centroid-nearest observed representative | Sampled structure closest to arithmetic cluster centroid in projection space | Medoid or energy-minimizing structure |
+| Population-derived relative free energy | Descriptive estimate from sampled occupancy | Converged thermodynamic free energy |
+| 2D projection / FES | Visual summary of the sampled projection | Entire space used for multidimensional clustering |
+| RMSD-retained structural subset | Configurations satisfying a downstream structural criterion | Redefined cluster memberships |
+| Successful numerical diagnostic | Check of the specific numerical property reported | Universal scientific equivalence or model validity |
+
+The `--auto` heuristic is a convenient starting point rather than a literature-validated universal optimum. Sensitivity to clustering parameters, projection dimensionality, atom/torsion selection, sampling and preprocessing should be investigated when conclusions depend on precise cluster definitions.
+
+carma and GROMACS workflows have different input conventions and may not produce numerically identical projections without matched structural selections, alignment, torsions and PBC preparation. Reproducibility requires preserving these choices, not only the HDBSCAN parameters.
 
 ## Author
 
-**Anastasios Melas**
-
-MSc Applied Bioinformatics and Data Analysis\
+**Anastasios Melas**  
+MSc in Applied Bioinformatics and Data Analysis  
 Democritus University of Thrace
 
----
+Developed as part of a Master's research project under the supervision of **Nicholas M. Glykos**.
 
-## Repository
-
-[github.com/tasosmelas/clusterMD](https://github.com/tasosmelas/clusterMD)

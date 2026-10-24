@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "clustermd"
+version = "1.2.0"
+description = "Multidimensional clustering and structural characterization of MD projections"
+requires-python = ">=3.10"
+dependencies = ["numpy", "scipy", "fast-hdbscan", "matplotlib", "psutil"]
+
+[project.scripts]
+clusterMD = "clustermd.app:main"
+
+[tool.setuptools.packages.find]
+include = ["clustermd*"]
+
